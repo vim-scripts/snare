@@ -1,0 +1,625 @@
+*snare.txt*	Snippets Again, with Regular Expressions
+
+Author: Paul Isambert (zappathustra AT free DOT fr)
+Version: 1.0
+Date: April 2014
+
+1. Quick start ....................................... |snare-start|
+2. The snare files ................................... |snare-files|
+   2.1 Where they are and how they are named ......... |snare-path|
+   2.2 Options ....................................... |snare-file-options|
+   2.3 Snares (or snippets) .......................... |snare-snares|
+3. Functions ......................................... |snare-functions|
+4. Options ........................................... |snare-options|
+5. Examples  ......................................... |snare-examples|
+
+==============================================================================
+1. Quick start						*snare-start*
+
+This section gives simple instructions so you can start using snares almost
+immediately; details and customization are given in the rest of this document.
+
+Drop "snare.vim" in the "autoload" dir of your local Vim directory (e.g.
+"$HOME/.vim/autoload" or something like that; if you're using a plugin
+manager, you should know where to put the file). Then add this to your
+"vimrc" file: >
+	inoremap <expr> <Tab>   snare#trigger("<Tab>", "expand", "next")
+	inoremap <expr> <S-Tab> snare#trigger("<S-Tab>", "prev")
+	snoremap <expr> <Tab>   snare#trigger("", "next")
+	snoremap <expr> <S-Tab> snare#trigger("", "prev")
+Now you can use <Tab> and <S-Tab> to expand snippets and jump to the next or
+previous placeholder (also in Select mode, which can be useful). Except of
+course you haven't defined a single snippet.
+
+So, in the the same directory as the "snare.vim" file, create a "snare" subdir
+and put in it a file named "html.snare" and containing: >
+	div
+	<div>
+	  $$
+	</div>
+Now, open an HTML file, type "div" and then <Tab>, and rejoice. (It won't work
+if there are non-space characters before "<div"; see |snare-before|.) But
+where are the regular expressions? Here: >
+	div\s+(\w+)
+	<div id='\1'>
+	  $$
+	</div>
+(Use ":call snare#load()" in the HTML file to reload snippets once modified.)
+Cool. But couldn't we combine both snippets? Yes we could. Remove the previous
+snippets and write (and then ":call snare#load()"): >
+	div%(\s+(\w+))?
+	<div`len("\1") ? " id='\1'" : ""`>
+	  $$
+	</div>
+Now "div" then <Tab> expands to (the pipe notes the cursor position): >
+	<div>
+	  |
+	</div>
+while "div foo" then <Tab> gives: >
+	<div id='foo'>
+	  |
+	</div>
+Now you know pretty much everything there is to know, including how to execute
+Vim code inside the replacement text. The rest of this help file is not
+mandatory reading.
+
+==============================================================================
+2. The snare files					*snare-files*
+
+2.1 Where they are and how they are named~
+							*snare-path*
+Files containing snippets for a given filetype must be in a directory given by
+the "path" option. By default, it is set to "<snare-dir>/snare", where
+"<snare-dir>" is the directory containing the "snare.vim" file (so, in a basic
+installation on a Unix-like system, it's "$HOME/.vim/autoload/snare").
+
+The files themselves are named according to the filetype they target, with the
+".snare" extension. For instance, snippets for HTML code are in
+"html.snare", for a C file it's "c.snare", for Ruby it's "ruby.snare", etc.,
+provided you use the default Vim filetypes. If you want to know the filetype
+of a given file, use ":echo &ft".
+
+2.2 Options ~
+						*snare-file-options*
+Options may be global or specific to a filetype; in the latter case,
+the values are given in the snare file as follows: the first non-blank
+line of the file should contain only "options"; it is followed by
+lines each made as "<option>: <value>"; finally comes an "endoptions"
+line. For instance: >
+	options
+	dummy  : \v!%(\<(.{-})\>)?!
+	noline : NOLINE
+	endoptions
+Space at the beginning and end of the line, and around the colon, is
+ignored. See |snare-options| for details on options.
+
+2.3 Snares (or snippets)~
+						*snare-snares* *snares-snippets*
+The snare files contain snares (!) separated by empty lines, and "empty"
+really means "empty": a line containing space is not considered empty and will
+be seen as a part of a snare. If you really want an empty line in a pattern,
+see |snare-noline|.
+
+The first line of the snare is the pattern that will be tested again the
+current line. The rest is the replacement. So, in: >
+	div
+	<div>
+	  $$
+	</div>
+if the line (up to the cursor) matches "div", then a trigger will produce the
+following text, and the cursor will jump to the first placeholder.
+
+Once a pattern matches, the others aren't considered; patterns defined later
+have piority over those defined earlier.
+
+				*snare-magic* *snare-before* *snare-after*
+Actually, the first line is generally not the true pattern as used to find a
+match. To get the true pattern, you must add the value of the "magic" and
+"before" options before, and of the "after" option after: >
+	let true_pattern = magic . before . pattern . after
+Given the default values of "magic" ("\v"), "before" ("^\s{-}\zs") and "after"
+("$"), the true pattern for the snare above is: >
+	\v^\s{-}\zsdiv$
+which means: first, use a "very magic" pattern; then the line should contain
+only spaces before "div", but the matched part only starts at "div" (so the
+spaces aren't removed); finally "div" should be at the end of the line, or
+rather just before the cursor, since the pattern is tested against the line up
+to the cursor's position. So using <Tab> after "divx" won't work, because,
+"div" is not at the end of the (sub)line, and using <Tab> in e.g. >
+	<div id='sub'> div
+won't work either because of the "before" option. If you want to match even if
+there is material at the beginning of the line, just set "before" to an empty
+string, or start the pattern in the snare with ".*\zs" (see |snare-example-html|
+for an illustration).
+
+The default value of "magic" means that almost all characters have special
+meaning (see Vim's help); so if you wanted "div" to match only when preceded
+by an angle bracket ("<div"), you should escape the latter, and the pattern
+would be "\<div" (see |snare-example-html|).
+
+							*snare-dummy*
+In the replacement text, you can mark places where the cursor should
+move when a snare has been expanded or when using the "next" or "prev"
+actions. Actually, it means jumping to whatever matches the "dummy"
+option, which is a pattern. By default, the next dummy is marked with
+"$$". So our example could become: >
+	div
+	<div id='$$'>
+	  $$
+	</div>$$
+Once expanded, the cursor would be positioned in the quoted part; another
+<Tab> would move to the empty but indented line; and finally after the closing
+tag.
+
+You may want a placeholder to contain some default text. If the
+"dummy" option is at its default value, then you can use "$(text)$".
+Then, when jumping to that placeholder, "text" will be selected. You
+can start typing if you want to change it or <Tab> again to jump to
+the next placeholder. For instance: >
+	div
+	<div id='$(id)$'>
+	  $$
+	</div>$$
+<
+The "dummy" option works as follows: it is a pattern, and when using the
+"next" or "prev" actions, that pattern is simply used in a search. If a match
+is found, the cursor is positioned there; if the match contains a submatch, it
+is used as default text, which is selected. The default value of "dummy" is:
+	\v\$%(\((.{-})\))?\$
+(Note the magic.) It matches either "$$" or "$(something)$", as described
+above. The parentheses can be confusing, so working them outward:
+	(.{-})         matches "something" in $(something)$, creating a submatch;
+	\((.{-})\)     matches "(something)", not creating a submatch;
+	%(\((.{-})\))? makes   "(something)" optional, so "$$" is ok; the "%"
+	               sign before the left parenthesis prevents creating a
+		       submatch.
+The (no-)submatch part is important: the first submatch is used as default
+text, hence the use of "%(...)", otherwise the first submatch would be
+"(something)", not "something" (which would be the second submatch). (Again,
+note the "\v"-magic: parentheses have their literal meaning when escaped.)
+
+If you're unsure how to create a proper dummy pattern for a given filetype and
+the default one won't work either (e.g. in TeX, where the dollar sign is
+pervasive), just modify the default one as follow: replace the "\$" with
+whatever suits your need as a dummy delimiter; and replace (if necessary) "\("
+and "\)" with whatever suits you as a default text delimiter. For instance,
+"\v!%(\<(.{-})\>)?!" would make "!!" an empty dummy and "!<something>!" a
+dummy with default text.
+
+If a replacement contains no dummy, the cursor is moved at the end of the
+inserted material.
+
+							*snare-submatch*
+If a snare's pattern contains submatches, they can be used in the replacement
+text. By default, Vim's syntax is used, and "\1" denotes the first submatch,
+"\2" the second one, etc. Hence: >
+	div\s+(\w+)
+	<div id='\1'>
+	  $$
+	</div>
+will insert whatever word follows "div" as the the div's id; the cursor will
+jump to the first dummy as usual.
+
+Unlike other snippet plugins, snares don't automatically update several
+instances of the same thing as you type; instead, use submatch: the name of
+e.g. a variable is typed before expanding, and then inserted in the right
+places. See |snare-example-javascript| for illustration.
+
+What counts as a submatch in the replacement text depends on the "submatch"
+option: it is a pattern whose first submatch should be the number of the
+intended submatch from the snare's pattern (got it?). By default it is defined
+as "\v\\(\d)", so it matches "\1", "\2", etc., and returns "1", "2", etc.
+
+						*snare-substitute* *snare-eval*
+Some parts of the replacement text can be interpreted before they are
+inserted. By default, anything between backticks is evaluated as a Vim
+expression and whatever it returns is inserted in its place. For instance: >
+	div%(\s+(\w+))?
+	<div`len("\1") ? " id='\1'" : ""`>
+	  $$
+	</div>
+The part between backticks is evaluated as follows: "\1" is replaced with the
+first submatch, if any; then "len()" decides whether that submatch is empty or
+not; if not, the "id" property is returned with the submatch as its value;
+otherwise, an empty string is returned. It may not be obvious at first sight,
+but the whole expression is a valid Vim statement: >
+	len("\1") ? " id='\1'" : ""
+which is equivalent to: >
+	if len("\1")
+	  return " id='\1'"
+	else
+	  return ""
+	endif
+Evaluated expressions may return anything, including dummies; the previous
+example could be rewritten as: >
+	div%(\s+(\w+))?
+	<div`len("\1") ? " id='\1'" : "$$"`>
+	  $$
+	</div>
+If there is no submatch, then the "$$" dummy is inserted instead of nothing,
+and the cursor will jump to that position after the snare is expanded.
+
+If you want to use shell commands, you can use Vim's |system()| function,
+for instance: >
+	date
+	`split(system('date'), '\n')[0]`
+The |split()| function as used here allows the command output to be turned
+into a List, one line per List item. It may seem unnecessary here, except that
+it removes the trailing newline character.
+
+As you might have guessed, what part of a line is to be evaluated is
+determined by a pattern recorded in the "substitute" option; what must be
+evaluated is its first submatch. By default, it is >
+	\v`(.{-})`
+hence anything between backticks.
+
+Also, how the expression is evaluated depends on yet another option: "eval".
+It is a function (see |snare-option-eval| for how to declare it as a local
+option in a snare file) that should return whatever you want. By default it is
+defined as: >
+	function eval (str)
+	  exe "return " . a:str
+	endfunction
+so it simply evaluates Vim code. See |snare-example-eval| for other
+possibilities.
+
+							*snare-linebreak*
+It may be useful to write a single line of replacement text expanding to
+several lines. It is possible with the "linebreak" option: it is a pattern
+specifying where to break replacement lines. By default it is empty, meaning
+lines aren't broken (an empty pattern is simply not tested); setting it to
+e.g. '\v\\n' lets you insert '\n' in places where you want a linebreak. An
+illustration is given in |snare-example-repeat|.
+
+							*snare-noline*
+Every line of the replacement text is tested against the "noline" option (a
+pattern, as you can imagine). If there is a match, then the line is not
+inserted. By default, this option is set to "\v^$", so a completely blank line
+is ignored; a completely blank line can't appear as such in a snare anyway
+(since blank lines delimit snares), but it can be the result of a substitution.
+For instance: >
+	if(%[else])
+	if $$
+	  $$
+	`len("\1") ? "else" : ""`
+	`len("\1") ? "  $$" : ""`
+	end
+If <Tab> is hit after "if", then a simple >
+	if $$
+	  $$
+	end
+will be inserted; on the other hand, if the trigger is "ife", or "ifel", etc.,
+then the expansion will be: >
+	if $$
+	  $$
+	else
+	  $$
+	end
+The important point is that in the first case, empty lines are not inserted,
+because they match "noline".
+
+The snare above can be made simpler if the "linebreak" option is set to
+'\v\\n' (note the importance of single quotes in the substituted expression): >
+	if(%[else])
+	if $$
+	  $$
+	`len("\1") ? 'else\n $$' : ""`
+	end
+<
+If you really want a blank line to be part of the snare's expansion, define
+"noline" as e.g. "\v^NOLINE$" and specify a line of the replacement text as
+simply: >
+	`""`
+Note the inner quotes; if they were missing, "eval" would return nothing,
+which in Vim is 0, so a 0 would be inserted. You could also use two linebreaks.
+
+==============================================================================
+3. Functions						*snare-functions*
+
+Snares are loaded and expanded thanks to two simple functions.
+
+snare#load ([{noforce}])				*snare#load()*
+	Snares are loaded when you try to expand one, once for each filetype.
+	If you modify a snare file and want to reload it, use this function in
+	a file with the right filetype. If {noforce} is present and non-zero,
+	then the snares are loaded only if they haven't already been loaded.
+
+							*snare#trigger()*
+snare#trigger ({replacement}[, {action1}[, {action2}[, ...]]])
+	This is the main function that expands/jumps to the next/prev dummy,
+	or simply insert {replacement} if none of the actions is relevant. It
+	should be used in mappings as follows (any other use will lead to
+	unforeseen consequences): >
+	inoremap <expr> <Tab> snare#trigger("<Tab>", "expand", "next")
+<	Now, hitting <Tab> in Insert mode will try to expand a snare; if none
+	can be found, it will try to jump to the next dummy; if there is none,
+	then {replacement} is simply inserted, here the key's default value,
+	which is useful if you also want to use <Tab> as usual. If you don't
+	want anything to happen when no action is relevant, set {replacement}
+	as an empty string, as is done below. Otherwise, if you want
+	e.g. completion as the default action, set {replacement} to
+	"<C-X><C-N>" (or any other kind of completion).
+
+	You can, if you wish, assign the "expand" and "next" actions to
+	different keys; or you can use them in reverse order, in which
+	case the assigned key will first try to find a dummy and then
+	expand a pattern if unsuccesful. A third and last action is
+	"prev", which looks for the previous dummy, if any: >
+	inoremap <expr> <S-Tab> snare#trigger("<S-Tab>", "prev")
+<
+	If a dummy contains default text, then it will be selected when
+	jumping to it and you'll probably want to also be able to jump
+	to the next/previous dummy, hence the following Select mode
+	mappings: >
+	snoremap <expr> <Tab>   snare#trigger("", "next")
+	snoremap <expr> <S-Tab> snare#trigger("", "prev")
+<	{replacement} is empty because you don't want anything to happen in
+	select mode if there is no other dummy. Or maybe you want, but
+	you're on your own.
+
+	Using "snare#trigger()" with other modes (e.g. in a Normal mode
+	mapping), and/or without <expr>, or more generally in ways differing
+	from the one shown here (except, of course, to change the trigger
+	keys) is up to you. In particular, using e.g. "imap" instead of
+	"inoremap" may lead to chaos, unless you have remapped neither <Esc>
+	nor ":" in Normal mode, and you have no mapping for the command-line.
+
+==============================================================================
+4. Options						*snare-options*
+
+Options, except "path", can be either global or specific to a filetype.
+A global option is a value in the "g:snare" dictionary (the "g:"
+prefix is usually unnecessary). For instance, the "magic" option can
+be globally defined as: >
+	let g:snare.magic = '\v'
+You can do such declarations in your "vimrc" file. Make sure the the
+dictionary is properly defined beforehand: >
+	let g:snare = {}
+If a global option is missing, its default value is used. Values specific to a
+filetype are defined in the associated snare file, as described in
+|snare-file-options|.
+
+Here is an alphabetical list of the options.
+
+after 		(default: '$')				*snare-option-after*
+	The string added to a snare's pattern to make a complete pattern.
+	In its default form, it means a pattern should match just before
+	the cursor (since the search is made with part of the line up to
+	the cursor's position). Beware, this is interpreted according to
+	the "magic" option or possibly what comes in "before" or the pattern
+	itself or, in the last resort, according to Vim's 'magic' option.
+
+before		(default: ^\s{-}\zs)			*snare-option-before*
+	This is like "after", but it specifies what is automatically added
+	before a snare's pattern. The default value means that the pattern
+	should match at the beginning of the line, notwithstanding space. It
+	is often too strong a condition, but it can avoid unwanted expansion.
+	The "\zs" is necessary so that only the part matching the pattern will
+	be replaced (so initial indent won't be removed). Just as with
+	"after", pay attention to magic.
+
+dummy		(default: \v\$%(\((.{-})\))?\$)		*snare-option-dummy*
+	A pattern specifying what should be considered a dummy, i.e. a
+	placeholder for a cursor position. If the pattern returns a match, it
+	is used as default text, and will be selected when the cursor jumps to
+	that position.
+
+eval		(default: see text)			*snare-option-eval*
+	This a function that evaluates how a substituted part of a replacement
+	text is to be returned. By default, it is defined as: >
+	function eval (str)
+	  exe "return " . a:str
+	endfunction
+<	so it evaluates simple Vim code. See |snare-example-eval| for more
+	interesting possibilities. When specified in a snare file, the name of
+	the function should be given, as in: >
+	options
+	eval: MyEval
+	endoptions
+<	and there should exist a global function called "MyEval", probably
+	defined in your "vimrc" file.
+
+linebreak	(default: empty)			*snare-option-linebreak*
+	A pattern specifying where to break lines of a replacement text. If
+	empty, no breaking is applied. A convenient value is '\v\\n'.
+
+magic		(default: \v)				*snare-option-magic*
+	The first part of a full pattern (followed by "before", the snare's
+	pattern, and "after"), meant to specify the magic of what follows (see
+	Vim's help). Note that it is not used in other patterns (e.g. "dummy"
+	or "noline"), which is why they must specify their own magic if
+	necessary.
+
+noline		(default: \v^$)				*snare-option-noline*
+	A pattern used to identify lines that should be ignored in a
+	replacement text. Useful either to include blank lines or to have full
+	lines as the output of substitution, possibly ignoring them if
+	necessary. See |snare-noline| for examples.
+
+path		(default: <snare-dir>/snare)		*snare-option-path*
+	The directory where the snare files are to be found. The default
+	depends on where the "snare.vim" file is located; for instance, if it
+	is in "$HOME/.vim/autoload", then the snare files' directory is
+	"$HOME/.vim/autoload/snare". This is the only option that can only be
+	global; setting it in a snare file is meaningless.
+
+submatch	(default: \v\\(\d))			*snare-option-submatch*
+	A pattern defining a submatch. By default, a backslashed number.
+
+substitute	(default: \v`(.{-})`)			*snare-option-substitute*
+	A pattern defining what counts as an expression to be evaluated; by
+	default, anything between backticks. (Vim's syntax higlighting for
+	help files might hide the backticks in the default as shown here,
+	especially if you set 'conceallevel' at 2.)
+
+==============================================================================
+5. Examples						*snare-examples*
+
+Here are a few examples of what you can do with snares. Note that all
+patterns, except otherwise indicated, assume the options are at their default
+values.
+
+							*snare-example-vim*
+I like Vim's loops to be properly ended with "endfor" and "endwhile", but I
+don't like typing those words. A simple solution: >
+	(for|while)
+	\1 $$
+	  $$
+	end\1
+If, on the other hand, you want to be able to type "fo" as well as "for" or
+anything between "wh" and "while", then two snares will do: >
+	fo%[r]
+	for $$
+	  $$
+	endfor
+
+	wh%[ile]
+	while $$
+	  $$
+	endwhile
+Of course, you can work out a single snare to get the best of both solutions.
+
+							*snare-example-indent*
+The plugin is not very clever when it comes to indentation. For instance, you
+might want a simple snare like: >
+	el
+	else
+	  $$
+to rapidly add a branch to a conditional. The problem is that when you're
+going to type that you'll probably want the "else" line to be shifted
+leftwards automatically, as probably happens when you type "else" by hand.
+It won't happen here. Instead, you should define a snare like: >
+	(\s{2})?el
+	else
+	  $$
+Now two space characters will be removed at the beginning of the "if"
+line, if possible (of course the exact number of spaces or tabs
+depends on how you indent your code). Since each line of a snare's
+replacement text takes over the first line's indent, the dummy line is
+correctly indented.
+
+							*snare-example-html*
+You can create HTML tags on the fly as follows: >
+	.*\zs\<(\w+)
+	<\1>$$</\1>$$
+Then (almost) anything preceded by an opening angle bracket is turned into a
+tag, with the cursor in the right place and a dummy allowing you to jump out
+of the element. The ".*\zs" part at the beginning of the pattern is necessary
+so "do" can occur after something on the line, as it generally does.
+
+You may want the element to be displayed on several lines in some cases; then
+define this pattern after the previous one: >
+	.*\zs\<(div|style)
+	<\1>
+	  $$
+	</\1>
+and add tags to the first line. Since this snare comes after the previous one,
+it has precedence.
+
+							*snare-example-ruby*
+Ruby blocks are nice, except when you have to use "|" to denote arguments. So: >
+	.*\zsdo\s*(.*)
+	do `len("\1") ? "|" . join(split("\1"), ", ") . "|" : ""`
+	  $$
+	end
+and now "whatever do a b c" expands to: >
+	whatever do |a, b, c|
+	  $$
+	end
+whereas "whatever do" simply gives: >
+	whatever do
+	  $$
+	end
+The start of the pattern (".*\zs") is explained in the previous example.
+
+							*snare-example-eval*
+Vim code fitting the default "eval" function can be ugly. Here's how the
+function can be defined to allow simpler substitutions: >
+	function! g:snare.eval (str)
+	  let m = matchlist(a:str, '\(.\{-}\)??\(.\{-}\)::\(.*\)')
+	  if len(m)
+	    return len(m[1]) ? m[2] : m[3]
+	  else
+	    exe "return " . a:str
+	  endif
+	endfunction
+If the to-be-substituted part is of the form "{A}??{B}::{C}", then if {A} is
+not empty, {B} is returned, {C} otherwise. If the expression doesn't follow
+that pattern, then it is evaluated as usual. For instance, in Vim: >
+	fun%[ction]\s*(\S*)
+	function! `\1??\1::$(MyFunc)$` ($$)
+	  $$
+	endfunction
+will use the first match, if any, as the function name, or call it "MyFunc",
+which will be selected as the default text of the first dummy.
+
+							*snare-example-javascript*
+Using the definition above for "eval", one can define a snare for JavaScript
+for-loops: >
+	for%(\s+(\w+)%(\s+(\w+))?)?
+	for (var `\1??\1::i` = 0; `\1??\1::i` < `\2??\2.length::$$`; `\1??\1::i`++) {
+	  $$`\2??\2[\1]::`
+	}
+With that, "for" alone expands to: >
+	for (var i = 0; i < $$; i++) {
+	  $$
+	}
+(with the cursor immediately on the first dummy); "for myvar" expands to: >
+	for (var myvar = 0; myvar < $$; myvar++) {
+	  $$
+	}
+and finally "for myvar myobj" gives: >
+	for (var myvar = 0; myvar < myobj.length; myvar++) {
+	  $$myobj[myvar]
+	}
+Of course, if the snare above looks confusing, you can very well define three
+different ones to the same effect: >
+	for
+	for (var i = 0; i < $$; i++) {
+	  $$
+	}
+
+	for\s+(\w+)
+	for (var \1 = 0; \1 < $$; \1++) {
+	  $$
+	}
+
+	for\s+(\w+)\s+(\w+)
+	for (var \1 = 0; \1 < \2; \1++) {
+	  $$\2[\1]
+	}
+<
+							*snare-example-repeat*
+You may want to create some repetitive replacement. For instance, a snare for
+ordered lists in HTML where you can specify how many items you want. Then you
+can do this ("linebreak" must be set to '\v\\n' for this to work): >
+	.*\zs\<ol\s+(\d+)
+	<ol>
+	`repeat('  <li>$$</li>\n', \1)`
+	</ol>
+(For those wondering why there isn't a blank line before the closing "</ol>"
+tag, remember the "noline" option.)
+
+The trick can be used in other situations, for instance switch statements.
+Here it is applied to "if/elseif/else" conditionals (in Vim, but easily
+extended to other languages): >
+	i(i*)f(%[else])
+	if $$
+	  $$
+	`repeat('elseif $$\n  $$\n', len("\1"))`
+	`\2??else\n  $$::`
+	endif
+The number of i's at the beginning of "if", minus one, gives the number of
+"elseif" branches.
+
+The "repeat()" function isn't the only possibility for such repetitive code;
+here's how to declare several variable at once in JavaScript: >
+	var\s+([[:alnum:]_$ ]+)
+	var `join(split("\1"), ' = $$,\n    ')` = $$;
+Now "var a b c" expands to: >
+	var a = $$,
+	    b = $$,
+	    c = $$;
+Still more complex things can be done if you use your own functions.
+
+ vim:tw=78:ts=8:ft=help:norl:noexpandtab:

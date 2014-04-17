@@ -1,0 +1,33 @@
+This is a mirror of http://www.vim.org/scripts/script.php?script_id=4925
+
+This plugin expands code snippets for which the trigger is a regular
+expression; submatches can be reused in the expansion. Along with command
+substitution, regular expressions allow the user to define flexible snippets.
+
+A few examples:
+
+- In HTML, expand "<mytag" to
+    <mytag>$$</mytag>
+(with $$ marking the next position of the cursor), no matter what
+"mytag" is.
+
+- In Ruby, expand "do" to
+    do
+      $$
+    end
+and "do a b c" to
+    do |a, b, c|
+      $$
+    end
+with a single pattern.
+
+- In JavaScript, expand "var a b c" to
+    var a = $$,
+        b = $$,
+        c = $$;
+
+- Etc.
+
+The plugin follows a minimalist design, trying to be a simple yet powerful
+tool, using Vim's native resources (vim script, search patterns), and avoiding
+fancy features.
